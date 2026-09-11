@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import platform
-import time
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -33,20 +32,21 @@ class WindowNotFoundError(RuntimeError):
     pass
 
 
-class WindowFocusError(RuntimeError):
-    """Focus could not be taken right now; the caller may retry a later cycle."""
+class WindowNotForegroundError(RuntimeError):
+    """AoE2 is not the window the user is currently in."""
 
 
 class WindowManager:
-    def __init__(
-        self,
-        title_contains: str,
-        process_names: list[str],
-        focus_timeout_seconds: float = 2.0,
-    ):
+    """Finds and inspects the game window. It deliberately cannot activate it.
+
+    The bot only ever acts on a window the user themselves brought to the front,
+    so there is no focus-stealing code here to misfire: no SetForegroundWindow,
+    no AttachThreadInput, and no synthetic Alt tap into whatever app is focused.
+    """
+
+    def __init__(self, title_contains: str, process_names: list[str]):
         self.title_contains = title_contains.lower()
         self.process_names = {n.lower() for n in process_names}
-        self.focus_timeout_seconds = focus_timeout_seconds
 
     @staticmethod
     def _client_rect_on_screen(hwnd: int) -> tuple[int, int, int, int] | None:
@@ -175,110 +175,11 @@ class WindowManager:
             return False
         return pid == target.process_id
 
-    def _foreground_lock_timeout(self, value: int | None) -> int | None:
-        """Read or clear the foreground lock timeout, which blocks activation."""
-        import win32con
-        import win32gui
-
-        try:
-            if value is None:
-                return int(win32gui.SystemParametersInfo(win32con.SPI_GETFOREGROUNDLOCKTIMEOUT))
-            win32gui.SystemParametersInfo(
-                win32con.SPI_SETFOREGROUNDLOCKTIMEOUT, value, win32con.SPIF_SENDCHANGE
-            )
-        except Exception:  # noqa: BLE001 - unsupported on some systems
-            return None
-        return None
-
-    def _activate(self, target: TargetWindow, use_alt: bool) -> Exception | None:
-        import win32api
-        import win32con
-        import win32gui
-        import win32process
-
-        attached: list[int] = []
-        current_thread = win32api.GetCurrentThreadId()
-        try:
-            foreground = win32gui.GetForegroundWindow()
-            thread_ids = {win32process.GetWindowThreadProcessId(target.handle)[0]}
-            if foreground:
-                thread_ids.add(win32process.GetWindowThreadProcessId(foreground)[0])
-            for thread_id in thread_ids:
-                if thread_id and thread_id != current_thread:
-                    try:
-                        win32process.AttachThreadInput(current_thread, thread_id, True)
-                        attached.append(thread_id)
-                    except Exception as exc:  # noqa: BLE001 - hung threads refuse attachment
-                        log.debug("thread %s refused input attachment: %s", thread_id, exc)
-                        continue
-            if use_alt:
-                # Last resort: a synthetic Alt tap makes this process eligible to
-                # set the foreground window. Only sent when the game is not yet
-                # focused, so the keystroke cannot reach the game itself.
-                win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-                win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
-            win32gui.ShowWindow(target.handle, win32con.SW_SHOW)
-            win32gui.BringWindowToTop(target.handle)
-            win32gui.SetForegroundWindow(target.handle)
-            win32gui.SetActiveWindow(target.handle)
-        except Exception as exc:  # noqa: BLE001 - pywin32 errors vary by call
-            return exc
-        finally:
-            for thread_id in reversed(attached):
-                try:
-                    win32process.AttachThreadInput(current_thread, thread_id, False)
-                except Exception as exc:  # noqa: BLE001 - detach is best effort
-                    log.debug("detaching thread %s failed: %s", thread_id, exc)
-        return None
-
-    def focus(self, target: TargetWindow) -> TargetWindow:
-        """Bring the game forward and return its refreshed geometry."""
-        if platform.system() != "Windows":
-            raise RuntimeError("live control requires Windows")
-        import win32con
-        import win32gui
-
-        if self.is_foreground(target):
-            return self.refresh(target)
-
-        try:
-            if win32gui.IsIconic(target.handle):
-                # A minimized window reports a (-32000, -32000) rect, so geometry
-                # read before the restore completes is unusable.
-                win32gui.ShowWindow(target.handle, win32con.SW_RESTORE)
-        except Exception as exc:  # noqa: BLE001 - pywin32 errors vary by call
-            log.debug("restoring minimized window failed: %s", exc)
-
-        previous_timeout = self._foreground_lock_timeout(None)
-        if previous_timeout:
-            self._foreground_lock_timeout(0)
-        last_error: Exception | None = None
-        deadline = time.monotonic() + max(0.2, self.focus_timeout_seconds)
-        attempt = 0
-        try:
-            while True:
-                if self.is_foreground(target):
-                    return self.refresh(target)
-                last_error = self._activate(target, use_alt=attempt > 0) or last_error
-                attempt += 1
-                # Fullscreen and borderless games need a moment to take activation.
-                for _ in range(5):
-                    time.sleep(0.04)
-                    if self.is_foreground(target):
-                        return self.refresh(target)
-                # Always allow the second pass so the Alt fallback is reached
-                # even when the configured timeout is very short.
-                if attempt >= 2 and time.monotonic() >= deadline:
-                    break
-        finally:
-            if previous_timeout:
-                self._foreground_lock_timeout(previous_timeout)
-
-        detail = f": {last_error}" if last_error else ""
-        raise WindowFocusError(
-            f"could not focus AoE2 within {self.focus_timeout_seconds:g}s "
-            f"after {attempt} attempts{detail}"
-        )
-
-    def focus_if_needed(self, target: TargetWindow) -> TargetWindow:
-        return target if self.is_foreground(target) else self.focus(target)
+    def require_foreground(self) -> TargetWindow:
+        """The game window, only if the user currently has it in front."""
+        target = self.require()
+        if not self.is_foreground(target):
+            raise WindowNotForegroundError("AoE2 is not the foreground window")
+        # Geometry is read now rather than cached: the window may have been
+        # moved, resized or restored since it was last in front.
+        return self.refresh(target)

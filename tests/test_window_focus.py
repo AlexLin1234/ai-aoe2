@@ -1,10 +1,11 @@
 import platform
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from aoe2bot.capture.window import TargetWindow, WindowFocusError, WindowManager
+from aoe2bot.capture.window import TargetWindow, WindowManager, WindowNotForegroundError
 from aoe2bot.control.input import FocusLostError, InputDriver
 from aoe2bot.runtime.hotkey_monitor import EmergencyHotkeyMonitor
 
@@ -74,36 +75,30 @@ def test_foreground_check_accepts_any_window_owning_the_games_keyboard(
     assert manager.is_foreground(window()) is expected
 
 
-def test_focus_waits_for_activation_and_returns_geometry_read_afterwards(on_windows):
-    manager = WindowManager("age of empires", [], focus_timeout_seconds=1)
+def test_the_manager_has_no_way_to_activate_a_window_at_all():
+    """The safety property is an absence of capability, not a policy choice."""
+    forbidden = {"focus", "focus_if_needed", "_activate", "_foreground_lock_timeout"}
+
+    assert forbidden.isdisjoint(dir(WindowManager))
+
+    source = (Path(__file__).parents[1] / "src/aoe2bot/capture/window.py").read_text("utf-8")
+    for api in ("SetForegroundWindow", "AttachThreadInput", "keybd_event", "BringWindowToTop"):
+        assert f"{api}(" not in source, f"{api} would let the bot steal the user's focus"
+
+
+def test_require_foreground_refuses_when_the_user_is_in_another_window(on_windows):
+    manager = WindowManager("age of empires", [])
     moved = window(rect=(100, 100, 2020, 1180), client_rect=(108, 131, 2012, 1172))
-    # Activation is asynchronous: the game is only foreground on a later poll.
-    states = iter([False, False, False, True])
-    on_windows.setattr(manager, "is_foreground", lambda target: next(states, True))
+    on_windows.setattr(manager, "require", lambda: window())
     on_windows.setattr(manager, "refresh", lambda target: moved)
-    on_windows.setattr(manager, "_activate", lambda target, use_alt: None)
-    on_windows.setattr(manager, "_foreground_lock_timeout", lambda value: None)
-
-    assert manager.focus(window()) is moved
-
-
-def test_focus_gives_up_with_a_focus_error_callers_can_recover_from(on_windows):
-    manager = WindowManager("age of empires", [], focus_timeout_seconds=0.2)
-    attempts: list[bool] = []
-
-    def activate(target, use_alt):
-        attempts.append(use_alt)
-        return RuntimeError("denied")
 
     on_windows.setattr(manager, "is_foreground", lambda target: False)
-    on_windows.setattr(manager, "_activate", activate)
-    on_windows.setattr(manager, "_foreground_lock_timeout", lambda value: None)
+    with pytest.raises(WindowNotForegroundError):
+        manager.require_foreground()
 
-    with pytest.raises(WindowFocusError):
-        manager.focus(window())
-    # The synthetic Alt tap is a fallback only, never the first thing injected.
-    assert attempts[0] is False
-    assert len(attempts) > 1
+    # When the game is in front, geometry is re-read rather than trusted stale.
+    on_windows.setattr(manager, "is_foreground", lambda target: True)
+    assert manager.require_foreground() is moved
 
 
 def test_input_is_withheld_when_focus_is_lost_between_preflight_and_event():
@@ -116,6 +111,16 @@ def test_input_is_withheld_when_focus_is_lost_between_preflight_and_event():
         driver.click(50, 50)
     with pytest.raises(FocusLostError):
         driver.key("h")
+
+
+def test_a_live_driver_without_a_foreground_check_fails_closed():
+    driver = InputDriver(True, 8, 0, sleeper=lambda seconds: None)
+    driver.set_allowed_bounds((0, 0, 100, 100))
+
+    with pytest.raises(FocusLostError):
+        driver.key("h")
+    with pytest.raises(FocusLostError):
+        driver.click(50, 50)
 
 
 def test_click_outside_window_is_refused():

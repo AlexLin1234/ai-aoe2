@@ -10,7 +10,7 @@ from aoe2bot.agent.planner import Planner, PlannerError
 from aoe2bot.agent.schemas import Action, ActionType, Plan
 from aoe2bot.benchmarks.reach_feudal import ReachFeudalBenchmark
 from aoe2bot.capture.screenshot import ScreenshotCapture
-from aoe2bot.capture.window import TargetWindow, WindowFocusError, WindowManager
+from aoe2bot.capture.window import TargetWindow, WindowManager, WindowNotForegroundError
 from aoe2bot.config import AppConfig
 from aoe2bot.control.executor import ActionExecutor
 from aoe2bot.perception.heuristics import StateReader
@@ -52,62 +52,27 @@ class BotLoop:
         self.end_game_review = end_game_review
         self.usage = UsageTracker()
         self.history: list[dict] = []
-        self.focus_failures = 0
-        self.acquired_once = False
-        self.yielded = False
+        self.waiting_for_user = False
 
     def _acquire_target(self) -> TargetWindow | None:
-        """Return the focused game window, or None when this cycle must be skipped.
+        """The game window while the user has it in front, else None to skip.
 
-        Two different reasons produce a skip, and both must be survivable:
-        the user is working in another window (yield, silently and cheaply), or
-        activation was refused (retry with backoff). Neither ends the run.
+        The bot has no way to bring AoE2 forward, by design. Control is handed
+        over when the user clicks into the game and handed straight back when
+        they click away, so switching windows is never a crash or a fight.
         """
         target = self.windows.require()  # disappearing window is a hard kill switch
         if not self.executor.driver.live:
             return target
         if self.windows.is_foreground(target):
-            if self.yielded:
-                log.info("AoE2 is foreground again; resuming control")
-                self.yielded = False
-            self.acquired_once = True
-            self.focus_failures = 0
-            return target
-        if not self.c.window.focus_before_input:
-            self._note_focus_failure("AoE2 is not foreground and focusing is disabled")
-            return None
-        # Taking focus is allowed to start the run, never to interrupt the user.
-        may_take_focus = not self.c.window.yield_to_user or (
-            self.c.window.focus_on_start and not self.acquired_once
-        )
-        if not may_take_focus:
-            if not self.yielded:
-                log.info("another window has focus; yielding the desktop to the user")
-                self.yielded = True
-            return None
-        try:
-            target = self.windows.focus(target)
-        except WindowFocusError as exc:
-            self._note_focus_failure(str(exc))
-            return None
-        self.acquired_once = True
-        self.focus_failures = 0
-        self.yielded = False
-        return target
-
-    def _note_focus_failure(self, detail: str) -> None:
-        self.focus_failures += 1
-        if self.focus_failures >= self.c.window.max_focus_failures:
-            log.error("still cannot focus AoE2 after %d cycles: %s", self.focus_failures, detail)
-        else:
-            log.warning("skipping cycle, could not focus AoE2: %s", detail)
-
-    def _skip_backoff_seconds(self) -> float:
-        if self.yielded:
-            # Polling the foreground window is free; stay responsive so control
-            # resumes as soon as the user clicks back into the game.
-            return self.c.window.yield_poll_seconds
-        return self.c.window.focus_retry_seconds * min(self.focus_failures, 5)
+            if self.waiting_for_user:
+                log.info("AoE2 is in front again; resuming control")
+                self.waiting_for_user = False
+            return self.windows.refresh(target)
+        if not self.waiting_for_user:
+            log.info("waiting for AoE2 to be in front; click into the game to hand over control")
+            self.waiting_for_user = True
+        return None
 
     def _auto_resume(self, plan: Plan) -> dict[str, object] | None:
         if (
@@ -137,15 +102,19 @@ class BotLoop:
 
     def run(self, once: bool = False) -> None:
         benchmark = ReachFeudalBenchmark(time.time())
+        handover_deadline = time.monotonic() + self.c.window.startup_wait_seconds
         while not self.safety.emergency_stopped:
             cycle_started = time.monotonic()
             target = self._acquire_target()
             if target is None:
                 # An occluded window would only feed the planner other apps'
                 # pixels, so skip capture and planning entirely this cycle.
-                if once:
-                    raise WindowFocusError("AoE2 was not focusable for a single-cycle run")
-                time.sleep(self._skip_backoff_seconds())
+                if once and time.monotonic() >= handover_deadline:
+                    raise WindowNotForegroundError(
+                        f"AoE2 was not brought to the front within "
+                        f"{self.c.window.startup_wait_seconds:g}s; click into the game and rerun"
+                    )
+                time.sleep(self.c.window.foreground_poll_seconds)
                 continue
             shot = self.capture.capture(target)
             state = self.reader.read_state(shot)
