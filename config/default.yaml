@@ -1,0 +1,45 @@
+window:
+  title_contains: "Age of Empires II: Definitive Edition"
+  process_names: ["AoE2DE_s.exe"]
+  focus_before_input: true
+capture:
+  max_width_for_agent: 1280
+  jpeg_quality: 78
+  regions:
+    resource_bar: {x: 0.0, y: 0.0, width: 0.50, height: 0.10}
+    command_panel: {x: 0.0, y: 0.75, width: 0.38, height: 0.25}
+    minimap: {x: 0.78, y: 0.72, width: 0.22, height: 0.28}
+agent:
+  enabled: true
+  model: "gpt-5-mini"
+  default_recheck_seconds: 10
+  max_calls_per_game: 200
+  max_output_tokens: 300
+  max_actions_per_plan: 4
+  include_full_screenshot: true
+  input_usd_per_million_tokens: 0.0
+  output_usd_per_million_tokens: 0.0
+budget:
+  max_usd_per_game: 3.0
+safety:
+  emergency_stop_hotkey: "f12"
+  pause_resume_hotkey: "f11"
+  duplicate_cooldown_seconds: 4.0
+  max_events_per_second: 8
+  action_timeout_seconds: 3.0
+  max_actions_per_cycle: 4
+input:
+  live_enabled: false
+  key_interval_seconds: 0.06
+calibration:
+  house_position: [960, 540]
+  lumber_camp_position: [1100, 500]
+  food_position: [850, 520]
+  wood_position: [1100, 500]
+  gold_position: [750, 430]
+benchmark:
+  name: "reach_feudal"
+  max_town_center_idle_seconds: 120
+  max_population_cap_seconds: 90
+telemetry:
+  path: "logs/session.jsonl"
