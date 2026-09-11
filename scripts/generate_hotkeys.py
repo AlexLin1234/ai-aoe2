@@ -36,6 +36,10 @@ ALIASES = OrderedDict(
     )
 )
 
+# Escape is not in the game's hotkey table because it cannot be rebound, but the
+# loop needs it by name to dismiss a pause or menu overlay.
+FIXED_ALIASES = OrderedDict((("pause_menu_toggle", "esc"),))
+
 KEY_NAMES = {
     "VK_BACK": "backspace",
     "VK_TAB": "tab",
@@ -134,7 +138,7 @@ def collect(game_dir: Path, preset: str, language: str) -> tuple[list, dict[str,
     strings = load_strings(game_dir, language)
     groups: list[tuple[str, list[tuple[str, str, str]]]] = []
     by_data_name: dict[str, str] = {}
-    taken = set(ALIASES)
+    taken = set(ALIASES) | set(FIXED_ALIASES)
 
     for section in table.values():
         for group in section:
@@ -172,7 +176,7 @@ def render(groups: list, by_data_name: dict[str, str], preset: str) -> str:
     )
     # Cap the alignment so a handful of very long identifiers do not push every
     # value off to the right.
-    width = min(max(width, max(len(name) for name in ALIASES)), 34)
+    width = min(max(width, max(len(name) for name in (*ALIASES, *FIXED_ALIASES))), 34)
     lines = [
         "# Age of Empires II: Definitive Edition hotkeys.",
         "#",
@@ -192,6 +196,8 @@ def render(groups: list, by_data_name: dict[str, str], preset: str) -> str:
     for alias, data_name in ALIASES.items():
         value = by_data_name[data_name]
         lines.append(f'{alias + ":":<{width + 1}} "{value}"  # {data_name}')
+    for alias, value in FIXED_ALIASES.items():
+        lines.append(f'{alias + ":":<{width + 1}} "{value}"  # not rebindable in game')
 
     for label, entries in groups:
         lines += ["", f"# --- {label} ---"]

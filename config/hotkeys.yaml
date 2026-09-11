@@ -19,6 +19,7 @@ build_menu:                         "q"  # BUILD_ECONOMIC
 house:                              "q"  # VILLAGER_BUILD_HOUSE
 lumber_camp:                        "r"  # VILLAGER_BUILD_LUMBER_CAMP
 research_feudal:                    "z"  # TOWN_CENTER_AGE_ADVANCE
+pause_menu_toggle:                  "esc"  # not rebindable in game
 
 # --- Unit Commands - UNIT_COMMAND_HOTKEYS ---
 delete_unit:                        "delete"  # Delete Unit

@@ -18,6 +18,7 @@ REQUIRED = (
     "lumber_camp",
     "research_feudal",
     "stop",
+    "pause_menu_toggle",
 )
 
 

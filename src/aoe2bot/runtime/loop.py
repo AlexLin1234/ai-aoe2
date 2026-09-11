@@ -79,13 +79,19 @@ class BotLoop:
             not self.executor.driver.live
             or not self.c.input.auto_resume
             or self.safety.paused
+            # Both, because the in-match pause overlay is titled "Main Menu" and
+            # the model labels it menu as often as paused. The cost is that
+            # Escape also lands while the user browses menus outside a match.
             or plan.observed_state.screen not in {"paused", "menu"}
         ):
             return None
         started = time.monotonic()
         try:
             self.executor.preflight()
-            self.executor.driver.key(self.executor.hotkeys.get_required("stop"))
+            # Escape, not the unit Stop command: this dismisses a pause or menu
+            # overlay. The two were the same config entry until the hotkeys came
+            # from the game's own table, where "stop" is a unit order.
+            self.executor.driver.key(self.executor.hotkeys.get_required("pause_menu_toggle"))
             return {
                 "action": "AUTO_RESUME",
                 "success": True,

@@ -140,3 +140,33 @@ def test_single_cycle_run_explains_the_handover_instead_of_hanging():
     with pytest.raises(WindowNotForegroundError, match="click into the game"):
         loop.run(once=True)
     assert loop.planner.calls == 0
+
+
+def _plan(screen: str) -> Plan:
+    return Plan(
+        goal="resume",
+        observed_state=VisualState(screen=screen, confidence=1),
+        actions=[Action(type=ActionType.WAIT)],
+        recheck_after_seconds=0.5,
+    )
+
+
+def test_auto_resume_clears_the_pause_overlay_under_either_label():
+    keys: list[str] = []
+    loop = build_loop(Windows(foreground=[True]), [])
+    loop.executor = SimpleNamespace(
+        driver=SimpleNamespace(live=True),
+        hotkeys=SimpleNamespace(get_required=lambda name: {"pause_menu_toggle": "esc"}[name]),
+        preflight=lambda: None,
+    )
+    loop.executor.driver.key = keys.append
+
+    # The in-match pause overlay is titled "Main Menu", so the model labels it
+    # menu about as often as paused; both have to clear it or the bot sits
+    # forever in front of a game it could be playing.
+    assert loop._auto_resume(_plan("paused"))["success"]
+    assert loop._auto_resume(_plan("menu"))["success"]
+    assert keys == ["esc", "esc"]
+
+    assert loop._auto_resume(_plan("gameplay")) is None
+    assert keys == ["esc", "esc"]
