@@ -1,15 +1,10 @@
 window:
   title_contains: "Age of Empires II: Definitive Edition"
   process_names: ["AoE2DE_s.exe"]
-  focus_before_input: true
-  # Never wrestle the desktop away from the user: the bot pauses while another
-  # window is focused and resumes when AoE2 is in front again.
-  yield_to_user: true
-  focus_on_start: true
-  yield_poll_seconds: 1.0
-  focus_timeout_seconds: 2.0
-  focus_retry_seconds: 1.0
-  max_focus_failures: 5
+  # The bot never brings AoE2 to the front itself. Click into the game to hand
+  # it control; click away and it stops sending input immediately.
+  foreground_poll_seconds: 1.0
+  startup_wait_seconds: 20.0
 capture:
   max_width_for_agent: 1280
   jpeg_quality: 78

@@ -44,8 +44,13 @@ class InputDriver:
             self.sleep(max(0, 1 - (now - self.events[0])))
 
     def _guard_focus(self) -> None:
-        if self.focus_check is not None and not self.focus_check():
-            raise FocusLostError("AoE2 lost foreground focus; input withheld")
+        # Fails closed: a live driver with no way to confirm the game is in
+        # front must not inject anything, since keystrokes go to whatever
+        # window the user is currently in.
+        if self.focus_check is None:
+            raise FocusLostError("no foreground check configured; live input withheld")
+        if not self.focus_check():
+            raise FocusLostError("AoE2 is not the foreground window; input withheld")
 
     def set_allowed_bounds(self, bounds: tuple[int, int, int, int]) -> None:
         self.allowed_bounds = bounds

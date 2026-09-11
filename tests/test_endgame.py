@@ -82,11 +82,9 @@ def test_review_service_clicks_configured_normalized_graph_tabs(tmp_path):
         def is_foreground(self, _target):
             return True
 
-        def focus(self, _target):
-            raise AssertionError("already foreground")
-
-        def focus_if_needed(self, target):
-            return target if self.is_foreground(target) else self.focus(target)
+        def require_foreground(self):
+            assert self.is_foreground(target), "the user puts the stats screen in front"
+            return target
 
     class Capture:
         def capture(self, _target):

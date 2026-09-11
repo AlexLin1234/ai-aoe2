@@ -200,9 +200,8 @@ class EndGameReviewService:
         self.bank = MemoryBank(config.memory_path, config.overview_path)
 
     def _prepare(self) -> TargetWindow:
-        target = self.windows.focus_if_needed(self.windows.require())
-        if not self.windows.is_foreground(target):
-            raise RuntimeError("could not focus AoE2 statistics window")
+        # Tab clicking needs the stats screen in front; the user puts it there.
+        target = self.windows.require_foreground()
         self.driver.set_allowed_bounds(target.capture_rect)
         return target
 

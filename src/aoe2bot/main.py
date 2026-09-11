@@ -45,9 +45,7 @@ def main() -> None:
     if needs_live_input and not c.input.live_enabled:
         parser.error("live input also requires input.live_enabled: true in config")
     live = bool(args.live or (args.analyze_end_game and c.end_game.graph_tabs))
-    windows = WindowManager(
-        c.window.title_contains, c.window.process_names, c.window.focus_timeout_seconds
-    )
+    windows = WindowManager(c.window.title_contains, c.window.process_names)
     capture = ScreenshotCapture()
     focused: dict[str, TargetWindow] = {}
 
@@ -76,18 +74,9 @@ def main() -> None:
         return
 
     def preflight() -> None:
-        target = windows.require()
-        if not windows.is_foreground(target):
-            if c.window.yield_to_user:
-                # The loop already put AoE2 in front for this cycle, so losing
-                # focus here means the user switched away mid-batch. Drop the
-                # remaining input rather than yanking their window away.
-                raise RuntimeError("user switched to another window; input withheld")
-            if not c.window.focus_before_input:
-                raise RuntimeError("AoE2 is not foreground")
-            # focus() waits for activation and returns geometry read afterwards,
-            # so a window that was minimized or moved reports its real rect.
-            target = windows.focus(target)
+        # Re-checked before every action: if the user clicked away mid-batch the
+        # rest of the batch is dropped rather than typed into their window.
+        target = windows.require_foreground()
         focused["target"] = target
         driver.set_allowed_bounds(target.capture_rect)
 

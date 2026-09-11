@@ -65,7 +65,7 @@ For live input, first set `input.live_enabled: true` in a reviewed config, then 
 python -m aoe2bot.main --live
 ```
 
-F12 is the global emergency stop; F11 toggles pause/resume. Closing the target window activates the runtime kill path. Live actions re-identify and focus AoE2 before each semantic action. With `input.auto_resume: true`, a detected pause/menu overlay is closed using the configured `stop` key before the next capture. Clicks outside its current rectangle are rejected. `--live` without the config opt-in is rejected.
+F12 is the global emergency stop; F11 toggles pause/resume. Closing the target window activates the runtime kill path. The bot never brings AoE2 to the front itself and has no code that can: click into the game to hand it control, and click away to take control back — it stops capturing, planning, and sending input within `window.foreground_poll_seconds` and resumes when the game is in front again. Live actions re-identify AoE2 and re-verify it is foreground before each semantic action, and again immediately before each individual keystroke or click, so switching windows mid-batch drops the rest of the batch instead of typing it into your window. With `input.auto_resume: true`, a detected pause/menu overlay is closed using the configured `stop` key before the next capture. Clicks outside its current rectangle are rejected. `--live` without the config opt-in is rejected.
 
 ## End-game memory bank
 
@@ -94,7 +94,7 @@ To run the benchmark, set `benchmark.name: reach_feudal` (the default), calibrat
 
 `agent.max_calls_per_game`, `agent.max_output_tokens`, `agent.max_actions_per_plan`, and `budget.max_usd_per_game` bound model use. Only the newest optionally-downscaled screenshot, compact state JSON, and eight recent action results are sent. There is no growing chat transcript. Reaching call or dollar limits pauses the loop and prevents another call.
 
-Input safety additionally includes positive title/process identification, foreground validation/focus, F12 stop, F11 pause, per-cycle action limits, duplicate cooldown, confidence and gameplay-screen gates, rate-limited batches, configurable action timeout, and out-of-window click rejection. When a batch reaches the event-rate limit, it waits for capacity instead of discarding the remaining commands. The timeout is currently configuration groundwork; individual Win32 calls are synchronous and short.
+Input safety additionally includes positive title/process identification, per-event foreground validation that fails closed, F12 stop, F11 pause, per-cycle action limits, duplicate cooldown, confidence and gameplay-screen gates, rate-limited batches, configurable action timeout, and out-of-window click rejection. When a batch reaches the event-rate limit, it waits for capacity instead of discarding the remaining commands. The timeout is currently configuration groundwork; individual Win32 calls are synchronous and short.
 
 ## Tests
 
