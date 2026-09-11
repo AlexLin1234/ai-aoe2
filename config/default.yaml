@@ -17,7 +17,7 @@ agent:
   max_output_tokens: 768
   max_actions_per_plan: 4
   include_full_screenshot: true
-  min_state_confidence: 0.55
+  min_state_confidence: 0.40
   input_usd_per_million_tokens: 0.15
   output_usd_per_million_tokens: 0.60
 budget:

@@ -29,7 +29,7 @@ class AgentConfig(BaseModel):
     max_output_tokens: int = 768
     max_actions_per_plan: int = 4
     include_full_screenshot: bool = True
-    min_state_confidence: float = Field(default=0.55, ge=0, le=1)
+    min_state_confidence: float = Field(default=0.4, ge=0, le=1)
     input_usd_per_million_tokens: float = 0
     output_usd_per_million_tokens: float = 0
 

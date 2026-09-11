@@ -6,7 +6,7 @@ from typing import Any, Literal
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from .schemas import ActionType, Plan, VisualState
+from .schemas import ActionType, Plan, ScreenPoint, VisualState
 
 
 class _ParameterlessAction(BaseModel):
@@ -22,6 +22,14 @@ class _ParameterlessAction(BaseModel):
     ]
     count: None = None
     direction: None = None
+    target: None = None
+
+
+class _BuildAction(BaseModel):
+    type: Literal[ActionType.BUILD_HOUSE, ActionType.BUILD_LUMBER_CAMP]
+    count: None = None
+    direction: None = None
+    target: ScreenPoint
 
 
 class _AssignmentAction(BaseModel):
@@ -32,15 +40,17 @@ class _AssignmentAction(BaseModel):
     ]
     count: int | None = Field(default=None, ge=1, le=20)
     direction: None = None
+    target: ScreenPoint
 
 
 class _ScoutAction(BaseModel):
     type: Literal[ActionType.SCOUT_DIRECTION]
     count: None = None
     direction: Literal["north", "south", "east", "west"]
+    target: None = None
 
 
-_OutputAction = _ParameterlessAction | _AssignmentAction | _ScoutAction
+_OutputAction = _ParameterlessAction | _BuildAction | _AssignmentAction | _ScoutAction
 
 
 class _PlanOutput(BaseModel):
@@ -71,6 +81,7 @@ class StructuredAgentClient:
             max_output_tokens=self.max_output_tokens,
             input=[{"role": "system", "content": system}, {"role": "user", "content": content}],
             text_format=_PlanOutput,
+            store=False,
         )
         if response.output_parsed is None:
             details = [f"status={response.status}"]
@@ -81,11 +92,7 @@ class StructuredAgentClient:
             if error is not None:
                 details.append(f"error={error.code}: {error.message}")
             details.append(f"max_output_tokens={self.max_output_tokens}")
-            raise ValueError(
-                "strategist returned no validated plan (" + ", ".join(details) + ")"
-            )
+            raise ValueError("strategist returned no validated plan (" + ", ".join(details) + ")")
         usage = getattr(response, "usage", None)
         plan = Plan.model_validate(response.output_parsed.model_dump())
-        return plan, Usage(
-            getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0)
-        )
+        return plan, Usage(getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0))

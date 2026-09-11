@@ -38,7 +38,15 @@ class ActionExecutor:
                 action=action.type,
                 success=True,
                 duration_ms=(time.monotonic() - start) * 1000,
-                message="dry-run" if not self.driver.live else "executed",
+                message=(
+                    "dry-run"
+                    if not self.driver.live
+                    else (
+                        "no input"
+                        if action.type in {ActionType.WAIT, ActionType.NO_OP}
+                        else "input sent; awaiting visual verification"
+                    )
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - action failures must fail closed
             return ActionResult(
@@ -69,6 +77,12 @@ class ActionExecutor:
         self._key(item)
         self.driver.click(*self._resolve_position(position))
 
+    @staticmethod
+    def _target_or_fallback(action: Action, fallback: tuple[float, float]) -> tuple[float, float]:
+        if action.target is None:
+            return fallback
+        return action.target.x, action.target.y
+
     def _execute(self, a: Action) -> None:
         t = a.type
         if t in {ActionType.WAIT, ActionType.NO_OP}:
@@ -81,9 +95,12 @@ class ActionExecutor:
             self._key("select_town_center")
             self._key("train_villager")
         elif t == ActionType.BUILD_HOUSE:
-            self._build("house", self.calibration.house_position)
+            self._build("house", self._target_or_fallback(a, self.calibration.house_position))
         elif t == ActionType.BUILD_LUMBER_CAMP:
-            self._build("lumber_camp", self.calibration.lumber_camp_position)
+            self._build(
+                "lumber_camp",
+                self._target_or_fallback(a, self.calibration.lumber_camp_position),
+            )
         elif t == ActionType.RESEARCH_FEUDAL:
             self._key("select_town_center")
             self._key("research_feudal")
@@ -93,8 +110,9 @@ class ActionExecutor:
                 ActionType.ASSIGN_TO_WOOD: self.calibration.wood_position,
                 ActionType.ASSIGN_TO_GOLD: self.calibration.gold_position,
             }[t]
+            pos = self._target_or_fallback(a, pos)
             for _ in range(a.count or 1):
                 self._key("select_idle_villager")
-                self.driver.click(*self._resolve_position(pos))
+                self.driver.right_click(*self._resolve_position(pos))
         else:
             raise NotImplementedError(f"{t} has no safe deterministic executor yet")

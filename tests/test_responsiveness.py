@@ -1,5 +1,6 @@
 import base64
 import io
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -70,3 +71,10 @@ def test_input_rate_limit_waits_instead_of_dropping_batch():
     driver._guard_rate()
 
     assert waits == [1.0]
+
+
+def test_period_hotkey_uses_keyboard_period_not_numpad_decimal():
+    constants = SimpleNamespace(VK_OEM_PERIOD=190, VK_DECIMAL=110, VK_ESCAPE=27)
+
+    assert InputDriver.virtual_key_code(".", constants) == 190
+    assert InputDriver.virtual_key_code("decimal", constants) == 110

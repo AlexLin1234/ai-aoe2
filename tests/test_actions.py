@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from aoe2bot.agent.schemas import Action
+from aoe2bot.agent.schemas import Action, ActionType
 from aoe2bot.config import CalibrationConfig
 from aoe2bot.control.executor import ActionExecutor
 from aoe2bot.runtime.safety import SafetyController
@@ -56,3 +56,43 @@ def test_executor_resolves_normalized_positions_inside_current_window():
     )
 
     assert executor._resolve_position((0.3, 0.7)) == (400, 620)
+
+
+def test_resource_assignment_right_clicks_target():
+    class Driver:
+        live = True
+        allowed_bounds = (100, 200, 1100, 800)
+
+        def __init__(self):
+            self.keys = []
+            self.left_clicks = []
+            self.right_clicks = []
+
+        def key(self, key):
+            self.keys.append(key)
+
+        def click(self, x, y):
+            self.left_clicks.append((x, y))
+
+        def right_click(self, x, y):
+            self.right_clicks.append((x, y))
+
+    driver = Driver()
+    executor = ActionExecutor(
+        driver,
+        SimpleNamespace(get_required=lambda name: {"select_idle_villager": "."}[name]),
+        CalibrationConfig(
+            house_position=(0.3, 0.7),
+            lumber_camp_position=(0.2, 0.2),
+            food_position=(0.4, 0.4),
+            wood_position=(0.35, 0.48),
+            gold_position=(0.6, 0.6),
+        ),
+        lambda: None,
+    )
+
+    executor._execute(Action(type=ActionType.ASSIGN_TO_WOOD))
+
+    assert driver.keys == ["."]
+    assert driver.left_clicks == []
+    assert driver.right_clicks == [(450, 488)]

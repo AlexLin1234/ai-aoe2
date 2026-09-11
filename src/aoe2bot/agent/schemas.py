@@ -21,10 +21,16 @@ class ActionType(StrEnum):
     NO_OP = "NO_OP"
 
 
+class ScreenPoint(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0.08, le=0.82)
+
+
 class Action(BaseModel):
     type: ActionType
     count: int | None = Field(default=None, ge=1, le=20)
     direction: Literal["north", "south", "east", "west"] | None = None
+    target: ScreenPoint | None = None
 
     @model_validator(mode="after")
     def parameters_match(self) -> Action:
@@ -38,6 +44,15 @@ class Action(BaseModel):
             ActionType.ASSIGN_TO_GOLD,
         }:
             raise ValueError("count not allowed")
+        targeted = {
+            ActionType.BUILD_HOUSE,
+            ActionType.BUILD_LUMBER_CAMP,
+            ActionType.ASSIGN_TO_FOOD,
+            ActionType.ASSIGN_TO_WOOD,
+            ActionType.ASSIGN_TO_GOLD,
+        }
+        if self.target is not None and self.type not in targeted:
+            raise ValueError("target not allowed")
         return self
 
 

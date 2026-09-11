@@ -45,18 +45,24 @@ class InputDriver:
         import win32api
         import win32con
 
-        code = (
-            ord(key.upper())
-            if len(key) == 1 and key.isalpha()
-            else {".": win32con.VK_DECIMAL, "esc": win32con.VK_ESCAPE}.get(key.lower())
-        )
+        code = self.virtual_key_code(key, win32con)
         if code is None:
             raise ValueError(f"unsupported configured key {key!r}")
         win32api.keybd_event(code, 0, 0, 0)
         self.sleep(self.interval)
         win32api.keybd_event(code, 0, win32con.KEYEVENTF_KEYUP, 0)
 
-    def click(self, x: int, y: int) -> None:
+    @staticmethod
+    def virtual_key_code(key: str, win32con: object) -> int | None:
+        if len(key) == 1 and key.isalpha():
+            return ord(key.upper())
+        return {
+            ".": getattr(win32con, "VK_OEM_PERIOD", 0xBE),
+            "decimal": win32con.VK_DECIMAL,
+            "esc": win32con.VK_ESCAPE,
+        }.get(key.lower())
+
+    def _click(self, x: int, y: int, down_flag: int, up_flag: int) -> None:
         if not self.live:
             return
         if platform.system() != "Windows":
@@ -68,8 +74,21 @@ class InputDriver:
         ):
             raise RuntimeError("refusing click outside target window")
         import win32api
-        import win32con
 
         win32api.SetCursorPos((x, y))
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0)
+        win32api.mouse_event(down_flag, 0, 0)
+        win32api.mouse_event(up_flag, 0, 0)
+
+    def click(self, x: int, y: int) -> None:
+        if not self.live:
+            return
+        import win32con
+
+        self._click(x, y, win32con.MOUSEEVENTF_LEFTDOWN, win32con.MOUSEEVENTF_LEFTUP)
+
+    def right_click(self, x: int, y: int) -> None:
+        if not self.live:
+            return
+        import win32con
+
+        self._click(x, y, win32con.MOUSEEVENTF_RIGHTDOWN, win32con.MOUSEEVENTF_RIGHTUP)

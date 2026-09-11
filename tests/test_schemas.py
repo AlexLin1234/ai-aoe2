@@ -6,7 +6,9 @@ from aoe2bot.agent.schemas import Action, ActionType
 
 
 def test_action_validation():
-    assert Action(type="ASSIGN_TO_WOOD", count=2).type is ActionType.ASSIGN_TO_WOOD
+    action = Action(type="ASSIGN_TO_WOOD", count=2, target={"x": 0.4, "y": 0.5})
+    assert action.type is ActionType.ASSIGN_TO_WOOD
+    assert action.target is not None and action.target.x == 0.4
 
 
 @pytest.mark.parametrize(
@@ -16,6 +18,8 @@ def test_action_validation():
         {"type": "SCOUT_DIRECTION"},
         {"type": "BUILD_HOUSE", "count": 2},
         {"type": "WAIT", "direction": "north"},
+        {"type": "WAIT", "target": {"x": 0.4, "y": 0.5}},
+        {"type": "ASSIGN_TO_WOOD", "target": {"x": 0.4, "y": 0.95}},
     ],
 )
 def test_invalid_action_rejected(payload):
