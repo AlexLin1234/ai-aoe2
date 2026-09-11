@@ -85,6 +85,9 @@ def test_review_service_clicks_configured_normalized_graph_tabs(tmp_path):
         def focus(self, _target):
             raise AssertionError("already foreground")
 
+        def focus_if_needed(self, target):
+            return target if self.is_foreground(target) else self.focus(target)
+
     class Capture:
         def capture(self, _target):
             return Image.new("RGB", (1000, 600), "black")

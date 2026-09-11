@@ -200,12 +200,10 @@ class EndGameReviewService:
         self.bank = MemoryBank(config.memory_path, config.overview_path)
 
     def _prepare(self) -> TargetWindow:
-        target = self.windows.require()
-        if not self.windows.is_foreground(target):
-            self.windows.focus(target)
+        target = self.windows.focus_if_needed(self.windows.require())
         if not self.windows.is_foreground(target):
             raise RuntimeError("could not focus AoE2 statistics window")
-        self.driver.set_allowed_bounds(target.rect)
+        self.driver.set_allowed_bounds(target.capture_rect)
         return target
 
     def collect(self, initial_frame: Image.Image | None = None) -> dict[str, Image.Image]:
@@ -218,7 +216,7 @@ class EndGameReviewService:
             if not (0 <= normalized_x <= 1 and 0 <= normalized_y <= 1):
                 raise ValueError(f"end-game tab {label!r} must use normalized coordinates")
             target = self._prepare()
-            left, top, right, bottom = target.rect
+            left, top, right, bottom = target.capture_rect
             x = left + int((right - left) * normalized_x)
             y = top + int((bottom - top) * normalized_y)
             self.driver.click(x, y)

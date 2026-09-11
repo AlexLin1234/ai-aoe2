@@ -13,6 +13,18 @@ class WindowConfig(BaseModel):
     title_contains: str
     process_names: list[str] = Field(default_factory=lambda: ["AoE2DE_s.exe"])
     focus_before_input: bool = True
+    # AoE2 only accepts synthetic input while it is foreground, so the bot has
+    # to hold focus to play. With yield_to_user it never takes focus back from
+    # the user: it stops acting the moment another window is focused and
+    # resumes when the game is foreground again.
+    yield_to_user: bool = True
+    focus_on_start: bool = True
+    yield_poll_seconds: float = Field(default=1, ge=0.1, le=10)
+    focus_timeout_seconds: float = Field(default=2, ge=0.2, le=15)
+    focus_retry_seconds: float = Field(default=1, ge=0.1, le=30)
+    # Consecutive failed focus attempts before the loop stops spending planner
+    # calls and only keeps retrying; it never crashes on a user alt-tabbing.
+    max_focus_failures: int = Field(default=5, ge=1, le=100)
 
 
 class CaptureConfig(BaseModel):
@@ -51,6 +63,7 @@ class InputConfig(BaseModel):
     live_enabled: bool = True
     key_interval_seconds: float = 0.06
     auto_resume: bool = True
+    click_delay_seconds: float = Field(default=0.05, ge=0, le=1)
 
 
 class CalibrationConfig(BaseModel):

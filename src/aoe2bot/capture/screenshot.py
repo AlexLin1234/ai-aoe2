@@ -8,11 +8,14 @@ from .window import TargetWindow
 
 class ScreenshotCapture:
     def capture(self, target: TargetWindow) -> Image.Image:
-        left, top, right, bottom = target.rect
+        # capture_rect excludes borders/title bar so the frame the model sees is
+        # exactly the coordinate space clicks are resolved against.
+        left, top, right, bottom = target.capture_rect
+        width, height = right - left, bottom - top
+        if width <= 0 or height <= 0:
+            raise RuntimeError(f"AoE2 window has no drawable area ({width}x{height})")
         with mss() as grabber:
-            raw = grabber.grab(
-                {"left": left, "top": top, "width": right - left, "height": bottom - top}
-            )
+            raw = grabber.grab({"left": left, "top": top, "width": width, "height": height})
         return Image.frombytes("RGB", raw.size, raw.rgb)
 
 

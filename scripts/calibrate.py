@@ -5,9 +5,11 @@ import yaml
 from aoe2bot.capture.screenshot import ScreenshotCapture
 from aoe2bot.capture.window import WindowManager
 from aoe2bot.config import load_config
+from aoe2bot.utils.dpi import enable_per_monitor_dpi_awareness
 
 
 def main() -> None:
+    enable_per_monitor_dpi_awareness()
     p = argparse.ArgumentParser()
     p.add_argument("--config", default="config/default.yaml")
     p.add_argument("--output", default="config/calibration.local.yaml")
@@ -20,6 +22,7 @@ def main() -> None:
     payload = {
         "resolution": [image.width, image.height],
         "window_rect": list(target.rect),
+        "client_rect": list(target.capture_rect),
         "regions": config.capture.regions,
         "house_position": list(config.calibration.house_position),
         "lumber_camp_position": list(config.calibration.lumber_camp_position),
