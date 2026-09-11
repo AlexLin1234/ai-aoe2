@@ -10,6 +10,29 @@ class FocusLostError(RuntimeError):
     """The target window stopped being foreground between preflight and input."""
 
 
+MODIFIERS = ("ctrl", "alt", "shift")
+
+# Keys the keyboard driver reports with the extended-key flag. AoE2 reads the
+# flag, so scroll and edit keys are ignored without it.
+EXTENDED_KEYS = frozenset(
+    {
+        "left",
+        "right",
+        "up",
+        "down",
+        "insert",
+        "delete",
+        "home",
+        "end",
+        "pageup",
+        "pagedown",
+        "numpad_divide",
+        "printscreen",
+        "numlock",
+    }
+)
+
+
 class InputDriver:
     def __init__(
         self,
@@ -58,6 +81,12 @@ class InputDriver:
     def key(self, key: str) -> None:
         if not self.live:
             return
+        modifiers, base = self.split_hotkey(key)
+        if base.startswith("mouse"):
+            raise ValueError(
+                f"configured key {key!r} is a mouse binding, which keyboard input "
+                "cannot send; rebind the command to a key in game"
+            )
         if platform.system() != "Windows":
             raise RuntimeError("live input requires Windows")
         self._guard_rate()
@@ -65,12 +94,32 @@ class InputDriver:
         import win32api
         import win32con
 
-        code = self.virtual_key_code(key, win32con)
-        if code is None:
+        codes = [self.virtual_key_code(name, win32con) for name in (*modifiers, base)]
+        if None in codes:
             raise ValueError(f"unsupported configured key {key!r}")
-        win32api.keybd_event(code, 0, 0, 0)
-        self.sleep(self.interval)
-        win32api.keybd_event(code, 0, win32con.KEYEVENTF_KEYUP, 0)
+        *modifier_codes, code = codes
+        extended = win32con.KEYEVENTF_EXTENDEDKEY if base in EXTENDED_KEYS else 0
+        for modifier in modifier_codes:
+            win32api.keybd_event(modifier, 0, 0, 0)
+        try:
+            win32api.keybd_event(code, 0, extended, 0)
+            self.sleep(self.interval)
+            win32api.keybd_event(code, 0, extended | win32con.KEYEVENTF_KEYUP, 0)
+        finally:
+            # Released in reverse, and even when the press failed, so a stuck
+            # Ctrl or Alt cannot follow the user into their next window.
+            for modifier in reversed(modifier_codes):
+                win32api.keybd_event(modifier, 0, win32con.KEYEVENTF_KEYUP, 0)
+
+    @staticmethod
+    def split_hotkey(spec: str) -> tuple[list[str], str]:
+        """Split "ctrl+shift+h" into its modifiers and the key they qualify."""
+        tokens = spec.lower().split("+")
+        modifiers: list[str] = []
+        while len(tokens) > 1 and tokens[0] in MODIFIERS:
+            modifiers.append(tokens.pop(0))
+        # Rejoined so "ctrl++" still means Ctrl and the plus key.
+        return modifiers, "+".join(tokens)
 
     @staticmethod
     def virtual_key_code(key: str, win32con: object) -> int | None:
@@ -78,17 +127,56 @@ class InputDriver:
             return ord(key.upper())
         if len(key) == 1 and key.isdigit():
             return ord(key)
+        name = key.lower()
         names = {
+            "ctrl": ("VK_CONTROL", 0x11),
+            "alt": ("VK_MENU", 0x12),
+            "shift": ("VK_SHIFT", 0x10),
             ".": ("VK_OEM_PERIOD", 0xBE),
             ",": ("VK_OEM_COMMA", 0xBC),
+            ";": ("VK_OEM_1", 0xBA),
+            "/": ("VK_OEM_2", 0xBF),
+            "`": ("VK_OEM_3", 0xC0),
+            "[": ("VK_OEM_4", 0xDB),
+            "\\": ("VK_OEM_5", 0xDC),
+            "]": ("VK_OEM_6", 0xDD),
+            "'": ("VK_OEM_7", 0xDE),
+            "=": ("VK_OEM_PLUS", 0xBB),
+            "-": ("VK_OEM_MINUS", 0xBD),
             "decimal": ("VK_DECIMAL", 0x6E),
+            "numpad_decimal": ("VK_DECIMAL", 0x6E),
+            "numpad_add": ("VK_ADD", 0x6B),
+            "numpad_subtract": ("VK_SUBTRACT", 0x6D),
+            "numpad_multiply": ("VK_MULTIPLY", 0x6A),
+            "numpad_divide": ("VK_DIVIDE", 0x6F),
             "esc": ("VK_ESCAPE", 0x1B),
             "escape": ("VK_ESCAPE", 0x1B),
             "space": ("VK_SPACE", 0x20),
             "enter": ("VK_RETURN", 0x0D),
             "tab": ("VK_TAB", 0x09),
-        }.get(key.lower())
-        return None if names is None else getattr(win32con, names[0], names[1])
+            "backspace": ("VK_BACK", 0x08),
+            "insert": ("VK_INSERT", 0x2D),
+            "delete": ("VK_DELETE", 0x2E),
+            "home": ("VK_HOME", 0x24),
+            "end": ("VK_END", 0x23),
+            "pageup": ("VK_PRIOR", 0x21),
+            "pagedown": ("VK_NEXT", 0x22),
+            "left": ("VK_LEFT", 0x25),
+            "up": ("VK_UP", 0x26),
+            "right": ("VK_RIGHT", 0x27),
+            "down": ("VK_DOWN", 0x28),
+            "pause": ("VK_PAUSE", 0x13),
+            "capslock": ("VK_CAPITAL", 0x14),
+            "numlock": ("VK_NUMLOCK", 0x90),
+            "scrolllock": ("VK_SCROLL", 0x91),
+            "printscreen": ("VK_SNAPSHOT", 0x2C),
+        }
+        if name.startswith("f") and name[1:].isdigit() and 1 <= int(name[1:]) <= 24:
+            return getattr(win32con, f"VK_F{int(name[1:])}", 0x6F + int(name[1:]))
+        if name.startswith("numpad_") and name[7:].isdigit():
+            return getattr(win32con, f"VK_NUMPAD{name[7:]}", 0x60 + int(name[7:]))
+        entry = names.get(name)
+        return None if entry is None else getattr(win32con, entry[0], entry[1])
 
     def _click(self, x: int, y: int, down_flag: int, up_flag: int) -> None:
         if not self.live:
