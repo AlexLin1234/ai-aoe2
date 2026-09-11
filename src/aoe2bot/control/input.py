@@ -1,24 +1,37 @@
 from __future__ import annotations
+
 import platform
 import time
 from collections import deque
+from collections.abc import Callable
 
 
 class InputDriver:
-    def __init__(self, live: bool, max_events_per_second: int, key_interval: float):
+    def __init__(
+        self,
+        live: bool,
+        max_events_per_second: int,
+        key_interval: float,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
+    ):
         self.live = live
         self.limit = max_events_per_second
         self.interval = key_interval
+        self.clock = clock
+        self.sleep = sleeper
         self.events: deque[float] = deque()
         self.allowed_bounds: tuple[int, int, int, int] | None = None
 
     def _guard_rate(self) -> None:
-        now = time.monotonic()
-        while self.events and now - self.events[0] >= 1:
-            self.events.popleft()
-        if len(self.events) >= self.limit:
-            raise RuntimeError("input event rate limit exceeded")
-        self.events.append(now)
+        while True:
+            now = self.clock()
+            while self.events and now - self.events[0] >= 1:
+                self.events.popleft()
+            if len(self.events) < self.limit:
+                self.events.append(now)
+                return
+            self.sleep(max(0, 1 - (now - self.events[0])))
 
     def set_allowed_bounds(self, bounds: tuple[int, int, int, int]) -> None:
         self.allowed_bounds = bounds
@@ -40,7 +53,7 @@ class InputDriver:
         if code is None:
             raise ValueError(f"unsupported configured key {key!r}")
         win32api.keybd_event(code, 0, 0, 0)
-        time.sleep(self.interval)
+        self.sleep(self.interval)
         win32api.keybd_event(code, 0, win32con.KEYEVENTF_KEYUP, 0)
 
     def click(self, x: int, y: int) -> None:

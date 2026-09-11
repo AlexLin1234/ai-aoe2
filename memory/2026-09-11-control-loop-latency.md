@@ -1,0 +1,9 @@
+# Debug report: slow control loop
+
+- **Symptom:** Live control appeared to perform roughly one visible operation every 20 seconds.
+- **Root cause:** The loop synchronously waits for a full-screen OpenAI vision request before each plan, executes the returned batch, then sleeps for `recheck_after_seconds`. Recent plans already contained three or four actions, but measured cycle intervals ranged from about 15 to 67 seconds and requested sleeps ranged from 2 to 15 seconds. Several actions also failed because the AoE2 window could not be focused, reducing the number of visible successful operations per cycle.
+- **Fix:** Switched the default planner to GPT-4o Mini, capped plan rechecks at five seconds with active-game guidance of 0.5–2 seconds, honored the configured 1,280-pixel screenshot width, added a compact visual-state reading and confidence gate, recorded planning/cycle latency, skipped foreground changes for WAIT, and changed input throttling to wait instead of dropping the rest of a batch.
+- **Evidence:** The final 20 pre-fix telemetry records showed most plans contained three or four actions. A post-fix synthetic 1,920×1,080 image test downscaled the input, returned a valid detailed unknown-screen assessment in 3.99 seconds, and used 106 output tokens. AoE2 was closed, so a fresh game-frame test could not run.
+- **Regression test:** `tests/test_responsiveness.py` covers configured image resizing, confidence/screen gating, and preservation of input batches across rate-limit waits.
+- **Related:** Official OpenAI documentation describes GPT-4o Mini as accepting images and Structured Outputs and targeting focused tasks with lower latency and cost.
+- **Status:** DONE_WITH_CONCERNS — the implementation and API image path are verified; a real AoE2 frame still needs a one-cycle validation after the game is reopened.

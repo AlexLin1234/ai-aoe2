@@ -1,4 +1,8 @@
+from types import SimpleNamespace
+
 from aoe2bot.agent.schemas import Action
+from aoe2bot.config import CalibrationConfig
+from aoe2bot.control.executor import ActionExecutor
 from aoe2bot.runtime.safety import SafetyController
 from aoe2bot.runtime.telemetry import UsageTracker
 
@@ -34,3 +38,21 @@ def test_budget_and_call_stop_behavior():
     assert usage.estimated_cost_usd == 2
     usage.record(1, 1, 0, 0)
     assert not usage.can_call(2, 3)
+
+
+def test_executor_resolves_normalized_positions_inside_current_window():
+    driver = SimpleNamespace(allowed_bounds=(100, 200, 1100, 800))
+    executor = ActionExecutor(
+        driver,
+        SimpleNamespace(),
+        CalibrationConfig(
+            house_position=(0.3, 0.7),
+            lumber_camp_position=(0.2, 0.2),
+            food_position=(0.4, 0.4),
+            wood_position=(0.5, 0.5),
+            gold_position=(0.6, 0.6),
+        ),
+        lambda: None,
+    )
+
+    assert executor._resolve_position((0.3, 0.7)) == (400, 620)

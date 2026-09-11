@@ -11,14 +11,15 @@ capture:
     minimap: {x: 0.78, y: 0.72, width: 0.22, height: 0.28}
 agent:
   enabled: true
-  model: "gpt-5-mini"
-  default_recheck_seconds: 10
+  model: "gpt-4o-mini"
+  default_recheck_seconds: 1
   max_calls_per_game: 200
-  max_output_tokens: 300
+  max_output_tokens: 768
   max_actions_per_plan: 4
   include_full_screenshot: true
-  input_usd_per_million_tokens: 0.0
-  output_usd_per_million_tokens: 0.0
+  min_state_confidence: 0.55
+  input_usd_per_million_tokens: 0.15
+  output_usd_per_million_tokens: 0.60
 budget:
   max_usd_per_game: 3.0
 safety:
@@ -29,17 +30,34 @@ safety:
   action_timeout_seconds: 3.0
   max_actions_per_cycle: 4
 input:
-  live_enabled: false
+  live_enabled: true
   key_interval_seconds: 0.06
+  auto_resume: true
 calibration:
-  house_position: [960, 540]
-  lumber_camp_position: [1100, 500]
-  food_position: [850, 520]
-  wood_position: [1100, 500]
-  gold_position: [750, 430]
+  # Window-relative coordinates remain valid when AoE2 moves or resizes.
+  house_position: [0.30, 0.72]
+  lumber_camp_position: [0.29, 0.57]
+  food_position: [0.56, 0.56]
+  wood_position: [0.35, 0.48]
+  gold_position: [0.56, 0.31]
 benchmark:
   name: "reach_feudal"
   max_town_center_idle_seconds: 120
   max_population_cap_seconds: 90
 telemetry:
   path: "logs/session.jsonl"
+end_game:
+  enabled: true
+  model: "gpt-5-mini"
+  # Set this to the exact in-game player name when several players are visible.
+  player_name: null
+  max_output_tokens: 4096
+  max_image_width: 1600
+  jpeg_quality: 85
+  memory_path: "memory_bank/games.jsonl"
+  overview_path: "memory_bank/overview.md"
+  max_previous_games: 10
+  tab_settle_seconds: 1.0
+  # Add calibrated window-relative graph-tab positions, for example:
+  # graph_tabs: {economy: [0.42, 0.18], military: [0.52, 0.18]}
+  graph_tabs: {}

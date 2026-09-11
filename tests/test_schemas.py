@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
-from aoe2bot.agent.schemas import Action, ActionType
+
 from aoe2bot.agent.planner import Planner, PlannerError
+from aoe2bot.agent.schemas import Action, ActionType
 
 
 def test_action_validation():
@@ -24,7 +25,7 @@ def test_invalid_action_rejected(payload):
 
 def test_planner_parses_valid_result():
     plan = Planner.parse(
-        '{"goal":"stay safe","actions":[{"type":"WAIT"}],"recheck_after_seconds":8}'
+        '{"goal":"stay safe","actions":[{"type":"WAIT"}],"recheck_after_seconds":2}'
     )
     assert plan.actions[0].type is ActionType.WAIT
 

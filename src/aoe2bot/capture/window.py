@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import platform
+import time
 from dataclasses import dataclass
 
 
@@ -72,8 +74,53 @@ class WindowManager:
     def focus(self, target: TargetWindow) -> None:
         if platform.system() != "Windows":
             raise RuntimeError("live control requires Windows")
+        import win32api
         import win32con
         import win32gui
+        import win32process
 
-        win32gui.ShowWindow(target.handle, win32con.SW_RESTORE)
-        win32gui.SetForegroundWindow(target.handle)
+        if win32gui.IsIconic(target.handle):
+            win32gui.ShowWindow(target.handle, win32con.SW_RESTORE)
+        last_error: Exception | None = None
+        for _ in range(3):
+            if self.is_foreground(target):
+                return
+            try:
+                # A brief Alt event lets a background automation process request
+                # foreground activation under Windows' focus-stealing rules.
+                win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+                win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+                win32gui.BringWindowToTop(target.handle)
+                win32gui.SetForegroundWindow(target.handle)
+            except Exception as exc:  # noqa: BLE001 - pywin32 errors vary by call
+                last_error = exc
+            time.sleep(0.1)
+
+        if self.is_foreground(target):
+            return
+
+        attached_threads: list[int] = []
+        current_thread = win32api.GetCurrentThreadId()
+        foreground = win32gui.GetForegroundWindow()
+        thread_ids = {
+            win32process.GetWindowThreadProcessId(target.handle)[0],
+            win32process.GetWindowThreadProcessId(foreground)[0],
+        }
+        try:
+            for thread_id in thread_ids:
+                if thread_id != current_thread:
+                    win32process.AttachThreadInput(current_thread, thread_id, True)
+                    attached_threads.append(thread_id)
+            win32gui.BringWindowToTop(target.handle)
+            win32gui.SetForegroundWindow(target.handle)
+            win32gui.SetFocus(target.handle)
+        except Exception as exc:  # noqa: BLE001 - pywin32 errors vary by call
+            last_error = exc
+        finally:
+            for thread_id in reversed(attached_threads):
+                win32process.AttachThreadInput(current_thread, thread_id, False)
+
+        time.sleep(0.1)
+        if not self.is_foreground(target):
+            detail = f": {last_error}" if last_error else ""
+            raise RuntimeError(f"could not focus positively identified AoE2 window{detail}")

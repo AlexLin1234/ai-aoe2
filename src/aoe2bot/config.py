@@ -1,7 +1,9 @@
 from __future__ import annotations
+
+import os
 from pathlib import Path
 from typing import Any
-import os
+
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -22,11 +24,12 @@ class CaptureConfig(BaseModel):
 class AgentConfig(BaseModel):
     enabled: bool = True
     model: str
-    default_recheck_seconds: float = 10
+    default_recheck_seconds: float = 1
     max_calls_per_game: int = 200
-    max_output_tokens: int = 300
+    max_output_tokens: int = 768
     max_actions_per_plan: int = 4
     include_full_screenshot: bool = True
+    min_state_confidence: float = Field(default=0.55, ge=0, le=1)
     input_usd_per_million_tokens: float = 0
     output_usd_per_million_tokens: float = 0
 
@@ -45,16 +48,17 @@ class SafetyConfig(BaseModel):
 
 
 class InputConfig(BaseModel):
-    live_enabled: bool = False
+    live_enabled: bool = True
     key_interval_seconds: float = 0.06
+    auto_resume: bool = True
 
 
 class CalibrationConfig(BaseModel):
-    house_position: tuple[int, int]
-    lumber_camp_position: tuple[int, int]
-    food_position: tuple[int, int]
-    wood_position: tuple[int, int]
-    gold_position: tuple[int, int]
+    house_position: tuple[float, float]
+    lumber_camp_position: tuple[float, float]
+    food_position: tuple[float, float]
+    wood_position: tuple[float, float]
+    gold_position: tuple[float, float]
 
 
 class BenchmarkConfig(BaseModel):
@@ -67,6 +71,20 @@ class TelemetryConfig(BaseModel):
     path: str = "logs/session.jsonl"
 
 
+class EndGameConfig(BaseModel):
+    enabled: bool = True
+    model: str = "gpt-5-mini"
+    player_name: str | None = None
+    max_output_tokens: int = 4096
+    max_image_width: int = 1600
+    jpeg_quality: int = Field(default=85, ge=1, le=95)
+    memory_path: str = "memory_bank/games.jsonl"
+    overview_path: str = "memory_bank/overview.md"
+    max_previous_games: int = Field(default=10, ge=0, le=50)
+    tab_settle_seconds: float = Field(default=1, ge=0.25, le=5)
+    graph_tabs: dict[str, tuple[float, float]] = Field(default_factory=dict)
+
+
 class AppConfig(BaseModel):
     window: WindowConfig
     capture: CaptureConfig
@@ -77,6 +95,7 @@ class AppConfig(BaseModel):
     calibration: CalibrationConfig
     benchmark: BenchmarkConfig
     telemetry: TelemetryConfig
+    end_game: EndGameConfig = Field(default_factory=EndGameConfig)
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:

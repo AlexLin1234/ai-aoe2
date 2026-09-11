@@ -1,10 +1,14 @@
 from __future__ import annotations
+
 import json
+
 from PIL import Image
 from pydantic import ValidationError
+
+from aoe2bot.capture.screenshot import agent_jpeg_data_url
 from aoe2bot.config import AgentConfig
 from aoe2bot.perception.state import GameState
-from aoe2bot.capture.screenshot import agent_jpeg_data_url
+
 from .client import StructuredAgentClient, Usage
 from .prompt import SYSTEM_PROMPT
 from .schemas import Action, ActionType, Plan
@@ -15,9 +19,17 @@ class PlannerError(RuntimeError):
 
 
 class Planner:
-    def __init__(self, config: AgentConfig, client: StructuredAgentClient | None = None):
+    def __init__(
+        self,
+        config: AgentConfig,
+        client: StructuredAgentClient | None = None,
+        max_image_width: int = 1280,
+        image_quality: int = 78,
+    ):
         self.config = config
         self.client = client
+        self.max_image_width = max_image_width
+        self.image_quality = image_quality
 
     @staticmethod
     def parse(raw: str) -> Plan:
@@ -46,7 +58,7 @@ class Planner:
             separators=(",", ":"),
         )
         image = (
-            agent_jpeg_data_url(screenshot, self.config.max_output_tokens * 4, 78)
+            agent_jpeg_data_url(screenshot, self.max_image_width, self.image_quality)
             if self.config.include_full_screenshot
             else None
         )
