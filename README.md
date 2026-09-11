@@ -41,7 +41,7 @@ Set `OPENAI_API_KEY` in `.env`. Choose an OpenAI model available to your account
 
 ## Configuration and calibration
 
-1. In AoE2, configure the hotkeys in `config/hotkeys.yaml` (defaults are examples only).
+1. `config/hotkeys.yaml` ships the full Definitive Edition default set, generated from the game's own `resources/_common/dat/hotkeys.json`. If you play on those defaults there is nothing to do; otherwise edit the entries you rebound, or regenerate from another preset with `python scripts/generate_hotkeys.py --preset "left handed"`.
 2. Start a standard game at the intended resolution and keep the window visible.
 3. Run `python scripts/calibrate.py`. It positively identifies the configured title **and process**, writes `calibration.png`, records resolution/regions/positions in `config/calibration.local.yaml`, and sends no input.
 4. Inspect the screenshot. Update `config/default.yaml` with safe **window-relative coordinates** for a house, nearby woodline, food, wood, and gold. Each axis ranges from `0.0` at the left/top to `1.0` at the right/bottom. The prototype does not yet merge the local calibration file automatically.
