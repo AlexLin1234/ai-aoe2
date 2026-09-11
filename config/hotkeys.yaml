@@ -1,0 +1,8 @@
+select_town_center: "h"
+select_idle_villager: "."
+train_villager: "q"
+build_menu: "b"
+house: "e"
+lumber_camp: "z"
+research_feudal: "z"
+stop: "esc"
