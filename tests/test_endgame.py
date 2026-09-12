@@ -125,7 +125,7 @@ def test_review_service_clicks_configured_normalized_graph_tabs(tmp_path):
     assert driver.clicks == [(350, 500), (850, 500)]
 
 
-def test_bot_loop_triggers_review_and_stops_on_postgame(tmp_path):
+def test_bot_loop_triggers_review_and_stops_on_confirmed_postgame(tmp_path):
     config = load_config("config/default.yaml")
     config.telemetry.path = str(tmp_path / "telemetry.jsonl")
     frame = Image.new("RGB", (320, 200), "black")
@@ -141,10 +141,13 @@ def test_bot_loop_triggers_review_and_stops_on_postgame(tmp_path):
     capture = SimpleNamespace(capture=lambda _target: frame)
     reader = SimpleNamespace(read_state=lambda _frame: GameState())
     planner = SimpleNamespace(create_plan=lambda *_args: (plan, Usage()))
-    executor = SimpleNamespace(
-        driver=SimpleNamespace(live=False),
-        execute=lambda _action: (_ for _ in ()).throw(AssertionError()),
-    )
+    waits = []
+
+    def execute(action):
+        waits.append(action.type)
+        return SimpleNamespace(model_dump=lambda mode: {"action": action.type})
+
+    executor = SimpleNamespace(driver=SimpleNamespace(live=False), execute=execute)
 
     class Telemetry:
         def __init__(self):
@@ -166,6 +169,9 @@ def test_bot_loop_triggers_review_and_stops_on_postgame(tmp_path):
         end_game_review=reviews.append,
     ).run()
 
+    # The first postgame frame only waits: ending the run and spending a review
+    # takes the same reading twice, so one odd frame mid-match cannot do it.
     assert reviews == [frame]
-    assert len(telemetry.rows) == 1
-    assert "end_game_review_latency_ms" in telemetry.rows[0][3]
+    assert waits == [ActionType.WAIT]
+    assert len(telemetry.rows) == 2
+    assert "end_game_review_latency_ms" in telemetry.rows[-1][3]

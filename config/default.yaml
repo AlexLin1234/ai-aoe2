@@ -16,6 +16,12 @@ agent:
   enabled: true
   model: "gpt-4o-mini"
   default_recheck_seconds: 1
+  # One frame read as paused/menu/postgame is usually a flicker or a misread.
+  # Look again straight away instead of parking on the model's recheck delay,
+  # and require the same reading twice before pressing Escape or ending the run.
+  flicker_recheck_seconds: 0.4
+  flicker_tolerance_cycles: 2
+  screen_confirm_cycles: 2
   max_calls_per_game: 200
   max_output_tokens: 768
   max_actions_per_plan: 4
@@ -36,6 +42,14 @@ input:
   live_enabled: true
   key_interval_seconds: 0.06
   auto_resume: true
+  # Escape toggles the pause menu: sent while the game is running it opens the
+  # overlay it was meant to clear. A confirming frame taken just before the
+  # keystroke must show the world still frozen (share of the frame allowed to
+  # move), only one toggle lands per cooldown, and after this many Escapes that
+  # did not restore gameplay the bot stands down instead of fighting the menu.
+  auto_resume_motion_threshold: 0.005
+  auto_resume_cooldown_seconds: 6.0
+  auto_resume_max_attempts: 3
   click_delay_seconds: 0.05
 calibration:
   # Window-relative coordinates remain valid when AoE2 moves or resizes.
