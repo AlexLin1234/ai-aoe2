@@ -67,6 +67,18 @@ python -m aoe2bot.main --live
 
 F12 is the global emergency stop; F11 toggles pause/resume. Closing the target window activates the runtime kill path. The bot never brings AoE2 to the front itself and has no code that can: click into the game to hand it control, and click away to take control back — it stops capturing, planning, and sending input within `window.foreground_poll_seconds` and resumes when the game is in front again. Live actions re-identify AoE2 and re-verify it is foreground before each semantic action, and again immediately before each individual keystroke or click, so switching windows mid-batch drops the rest of the batch instead of typing it into your window. With `input.auto_resume: true`, a pause/menu overlay is closed with Escape before the next capture — but only once it is proven. Escape is a toggle, so pressing it on a misread or stale frame opens the pause menu instead of closing it; the loop therefore requires the overlay on `agent.screen_confirm_cycles` consecutive readings, re-captures immediately before the keystroke and refuses to send it if more than `input.auto_resume_motion_threshold` of the frame has moved since (a frozen world is the evidence the overlay is still up), sends at most one toggle per `input.auto_resume_cooldown_seconds`, and stands down after `input.auto_resume_max_attempts` Escapes that did not restore gameplay rather than fighting the menu. Clicks outside its current rectangle are rejected. `--live` without the config opt-in is rejected.
 
+## Strategy log
+
+Every control cycle is appended to `logs/session.jsonl`. To read it as the decision record it is, render the dashboard:
+
+```powershell
+python scripts/strategy_log.py
+```
+
+It writes a self-contained `logs/strategy_log.html` — no server, no network, safe to share on its own. Runs are separated automatically (the strategist's call counter restarts with each `BotLoop`, and a gap over five minutes also starts a new run), and the newest is selected when the page opens.
+
+Each cycle shows the time and duration, the screen the strategist identified with its read confidence, the goal, the actions it issued with their outcomes, the failure message when one failed, and the resources it managed to read. Goals are printed only when they change, so genuine shifts in the plan stand out from the long stretches of the same objective. The summary above it covers how many inputs landed, the failure breakdown by action type, median cycle and planning time, and spend. A file picker on the page reparses any other `session.jsonl` locally, so one rendered report stays useful for later runs.
+
 ## End-game memory bank
 
 When the planner recognizes an AoE2 post-game or statistics screen on `agent.screen_confirm_cycles` consecutive readings, the loop stops issuing gameplay actions, analyzes the visible statistics, and appends a structured review to `memory_bank/games.jsonl`. It also rewrites `memory_bank/overview.md` with the current priorities, recurring trends, and a concrete plan for the next game. Prior reviews are included in the next analysis so the advice can track repeated problems. These generated files are ignored by Git.
@@ -131,7 +143,7 @@ src/aoe2bot/agent/      prompt, schemas, OpenAI client, planner
 src/aoe2bot/capture/    Win32 target discovery and MSS capture
 src/aoe2bot/perception/ extensible state, regions, heuristic/template seams
 src/aoe2bot/control/    guarded input and deterministic action recipes
-src/aoe2bot/runtime/    loop, hotkeys, safety, cost usage, telemetry
+src/aoe2bot/runtime/    loop, hotkeys, safety, cost usage, telemetry, strategy log
 src/aoe2bot/endgame.py  multi-page post-game analysis and improvement memory
 src/aoe2bot/benchmarks/ benchmark-owned completion and metrics
 tests/                  platform-independent unit tests
