@@ -14,11 +14,16 @@ from aoe2bot.capture.window import TargetWindow, WindowManager, WindowNotForegro
 from aoe2bot.config import AppConfig
 from aoe2bot.control.executor import ActionExecutor
 from aoe2bot.perception.heuristics import StateReader
+from aoe2bot.perception.motion import moved_fraction
 
 from .safety import SafetyController
 from .telemetry import TelemetryWriter, UsageTracker
 
 log = logging.getLogger(__name__)
+
+# The in-match pause overlay is titled "Main Menu", so the model labels it menu
+# about as often as paused. Both mean "an overlay Escape would clear".
+OVERLAY_SCREENS = frozenset({"paused", "menu"})
 
 
 def executable_actions(plan: Plan, min_confidence: float) -> list[Action]:
@@ -53,6 +58,18 @@ class BotLoop:
         self.usage = UsageTracker()
         self.history: list[dict] = []
         self.waiting_for_user = False
+        # Screen-reading history. A single frame is never enough to act on: the
+        # planner sees a screenshot that is a whole planning round old by the
+        # time its verdict arrives, and Escape and the end-game review are both
+        # one-way doors.
+        self.seen_gameplay = False
+        self.last_screen: str | None = None
+        self.screen_streak = 0
+        self.non_gameplay_streak = 0
+        self.overlay_streak = 0
+        self.resume_attempts = 0
+        self.last_resume_at: float | None = None
+        self.stood_down = False
 
     def _acquire_target(self) -> TargetWindow | None:
         """The game window while the user has it in front, else None to skip.
@@ -74,37 +91,133 @@ class BotLoop:
             self.waiting_for_user = True
         return None
 
-    def _auto_resume(self, plan: Plan) -> dict[str, object] | None:
+    def _note_screen(self, screen: str) -> None:
+        self.screen_streak = self.screen_streak + 1 if screen == self.last_screen else 1
+        self.last_screen = screen
+        if screen == "gameplay":
+            self.seen_gameplay = True
+            self.non_gameplay_streak = 0
+            self.overlay_streak = 0
+            # Gameplay is back, so whatever the last Escape did, it worked.
+            self.resume_attempts = 0
+            self.stood_down = False
+            return
+        self.non_gameplay_streak += 1
+        self.overlay_streak = self.overlay_streak + 1 if screen in OVERLAY_SCREENS else 0
+
+    def _confirmed_screen(self) -> bool:
+        """The same screen twice running, so it is not one odd frame."""
+        return self.screen_streak >= self.c.agent.screen_confirm_cycles
+
+    def _flickering(self) -> bool:
+        """A short non-gameplay blip in an otherwise running game.
+
+        A pause overlay that comes and goes - the user tapping Escape, a frame
+        caught mid-transition, or the planner misreading one screenshot - must
+        not park the agent for seconds or end its run. It looks again straight
+        away instead, and only a reading that persists is believed.
+        """
+        return (
+            self.seen_gameplay
+            and 0 < self.non_gameplay_streak <= self.c.agent.flicker_tolerance_cycles
+        )
+
+    @staticmethod
+    def _resume_record(sent: bool, message: str, started: float) -> dict[str, object]:
+        return {
+            "action": "AUTO_RESUME",
+            "sent": sent,
+            "success": sent,
+            "duration_ms": (time.monotonic() - started) * 1000,
+            "message": message,
+        }
+
+    def _auto_resume(
+        self, plan: Plan, target: TargetWindow, planned_frame: Image.Image
+    ) -> dict[str, object] | None:
+        """Clear a pause/menu overlay with Escape, but only once it is proven.
+
+        Escape is a toggle, not an idempotent "resume": pressed while the game
+        is actually running it *opens* the pause menu. Acting on a single
+        classification of a frame that is one planning round (seconds) old is
+        therefore how the bot pops up the menu it is trying to dismiss, and how
+        it then ping-pongs the overlay open and shut. Three gates prevent that:
+        the same overlay has to be read on consecutive cycles, a frame taken
+        right now has to show the world still frozen behind it, and one toggle
+        at a time is sent, with a stand-down when it clearly is not helping.
+        """
+        screen = plan.observed_state.screen
         if (
             not self.executor.driver.live
             or not self.c.input.auto_resume
             or self.safety.paused
-            # Both, because the in-match pause overlay is titled "Main Menu" and
-            # the model labels it menu as often as paused. The cost is that
-            # Escape also lands while the user browses menus outside a match.
-            or plan.observed_state.screen not in {"paused", "menu"}
+            or screen not in OVERLAY_SCREENS
         ):
             return None
         started = time.monotonic()
+        if self.overlay_streak < self.c.agent.screen_confirm_cycles:
+            return self._resume_record(
+                False,
+                f"{screen} read once; confirming on the next frame before toggling",
+                started,
+            )
+        if self.stood_down:
+            return self._resume_record(
+                False, "auto-resume stood down; press Escape yourself", started
+            )
+        if (
+            self.last_resume_at is not None
+            and started - self.last_resume_at < self.c.input.auto_resume_cooldown_seconds
+        ):
+            return self._resume_record(
+                False, "within the auto-resume cooldown; letting the last Escape land", started
+            )
+        if self.resume_attempts >= self.c.input.auto_resume_max_attempts:
+            self.stood_down = True
+            log.warning(
+                "%d Escapes did not restore gameplay; auto-resume is standing down so it "
+                "cannot keep toggling the pause menu. Clear the overlay yourself.",
+                self.resume_attempts,
+            )
+            return self._resume_record(
+                False, "auto-resume stood down after repeated attempts", started
+            )
+        try:
+            # The planner's frame is seconds old. Escape is only safe if the
+            # world is *still* frozen right now, so re-read it first.
+            current_frame = self.capture.capture(self.windows.refresh(target))
+        except Exception as exc:  # noqa: BLE001 - never toggle on a failed check
+            return self._resume_record(False, f"could not confirm the overlay: {exc}", started)
+        motion = moved_fraction(planned_frame, current_frame)
+        if motion > self.c.input.auto_resume_motion_threshold:
+            return self._resume_record(
+                False,
+                f"the world moved ({motion:.4f}) since the frame read as {screen}; "
+                "not sending Escape into a running game",
+                started,
+            )
         try:
             self.executor.preflight()
             # Escape, not the unit Stop command: this dismisses a pause or menu
             # overlay. The two were the same config entry until the hotkeys came
             # from the game's own table, where "stop" is a unit order.
             self.executor.driver.key(self.executor.hotkeys.get_required("pause_menu_toggle"))
-            return {
-                "action": "AUTO_RESUME",
-                "success": True,
-                "duration_ms": (time.monotonic() - started) * 1000,
-                "message": "sent configured pause/menu toggle",
-            }
         except Exception as exc:  # noqa: BLE001 - live input must fail closed
-            return {
-                "action": "AUTO_RESUME",
-                "success": False,
-                "duration_ms": (time.monotonic() - started) * 1000,
-                "message": str(exc),
-            }
+            return self._resume_record(False, str(exc), started)
+        self.last_resume_at = time.monotonic()
+        self.resume_attempts += 1
+        # Earn the confirmation again before the next toggle.
+        self.overlay_streak = 0
+        return self._resume_record(True, "sent configured pause/menu toggle", started)
+
+    def _recheck_delay(self, plan: Plan | None, resumed: bool) -> float:
+        if resumed:
+            return 0.5
+        if plan is None:
+            return self.c.agent.default_recheck_seconds
+        if self._flickering():
+            return self.c.agent.flicker_recheck_seconds
+        return plan.recheck_after_seconds
 
     def run(self, once: bool = False) -> None:
         benchmark = ReachFeudalBenchmark(time.time())
@@ -153,7 +266,14 @@ class BotLoop:
                     self.c.agent.input_usd_per_million_tokens,
                     self.c.agent.output_usd_per_million_tokens,
                 )
-                if plan.observed_state.screen == "postgame" and self.end_game_review:
+                self._note_screen(plan.observed_state.screen)
+                # One postgame frame ends the run and burns an end-game review,
+                # so it has to be the screen twice running, not a flicker.
+                if (
+                    plan.observed_state.screen == "postgame"
+                    and self.end_game_review
+                    and self._confirmed_screen()
+                ):
                     review_started = time.monotonic()
                     try:
                         self.end_game_review(shot)
@@ -173,13 +293,16 @@ class BotLoop:
                         },
                     )
                     return
-                resume_result = self._auto_resume(plan)
+                resume_result = self._auto_resume(plan, target, shot)
                 if resume_result:
                     results.append(resume_result)
-                    self.history.append(
-                        {"action": {"type": "AUTO_RESUME"}, "result": resume_result}
-                    )
-                    resumed = bool(resume_result["success"])
+                    resumed = bool(resume_result["sent"])
+                    if resumed:
+                        # Only a delivered toggle is history the planner needs;
+                        # the gates that withheld one are telemetry, not action.
+                        self.history.append(
+                            {"action": {"type": "AUTO_RESUME"}, "result": resume_result}
+                        )
                 actions = executable_actions(plan, self.c.agent.min_state_confidence)
                 for action in self.safety.filter(actions):
                     result = self.executor.execute(action)
@@ -203,8 +326,4 @@ class BotLoop:
             )
             if once:
                 return
-            time.sleep(
-                0.5
-                if resumed
-                else (plan.recheck_after_seconds if plan else self.c.agent.default_recheck_seconds)
-            )
+            time.sleep(self._recheck_delay(plan, resumed))

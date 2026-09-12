@@ -29,6 +29,13 @@ class AgentConfig(BaseModel):
     enabled: bool = True
     model: str
     default_recheck_seconds: float = 1
+    # A single frame read as paused/menu/postgame is usually a flicker or a
+    # misread, not the end of the game: look again quickly instead of taking
+    # the model's recheck delay, and require this many consecutive readings
+    # before acting on one.
+    flicker_recheck_seconds: float = Field(default=0.4, ge=0.05, le=5)
+    flicker_tolerance_cycles: int = Field(default=2, ge=0, le=10)
+    screen_confirm_cycles: int = Field(default=2, ge=1, le=10)
     max_calls_per_game: int = 200
     max_output_tokens: int = 768
     max_actions_per_plan: int = 4
@@ -55,6 +62,13 @@ class InputConfig(BaseModel):
     live_enabled: bool = True
     key_interval_seconds: float = 0.06
     auto_resume: bool = True
+    # Escape toggles the pause menu, so a wrong or stale reading does not waste
+    # a keystroke, it opens the very overlay it was meant to clear. These bound
+    # the damage: the world must still be frozen in a freshly taken frame, one
+    # toggle at a time, and the bot stands down instead of fighting the menu.
+    auto_resume_motion_threshold: float = Field(default=0.005, ge=0, le=1)
+    auto_resume_cooldown_seconds: float = Field(default=6, ge=0, le=60)
+    auto_resume_max_attempts: int = Field(default=3, ge=1, le=20)
     click_delay_seconds: float = Field(default=0.05, ge=0, le=1)
 
 
